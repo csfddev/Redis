@@ -601,6 +601,9 @@ class RedisClient extends Nette\Object implements \ArrayAccess
 		if ($result === FALSE && stripos($this->driver->getLastError(), 'NOSCRIPT') !== FALSE) {
 			$this->driver->clearLastError();
 			$sha = $this->driver->script('load', $script);
+			if ($sha === FALSE) {
+				throw new RedisClientException($this->driver->getLastError());
+			}
 			$result = $this->send('evalsha', [$sha, array_merge($keys, $args), count($keys)]);
 		}
 
