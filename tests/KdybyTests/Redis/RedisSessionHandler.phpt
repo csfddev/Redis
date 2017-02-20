@@ -259,14 +259,16 @@ class SessionHandlerTest extends AbstractRedisTestCase
 			$session->close(); // explicit close with unlock
 		}, 100, 30); // silence, I kill you!
 
-		self::assertRange(30, 40, $result[Tester\Runner\Runner::PASSED]);
+		self::assertRange(30, 42, $result[Tester\Runner\Runner::PASSED]);
 
-			// hard unlock
+		// hard unlock
+		$client->del('Nette.Session:' . $sessionId . ':signal');
+		$client->lpush('Nette.Session:' . $sessionId . ':signal', 1);
 		$client->del('Nette.Session:' . $sessionId . ':lock');
 
 		// open session for visits verify, for second time
 		$counter = $session->getSection('counter');
-		self::assertRange(30, 40, $counter->visits);
+		self::assertRange(30, 42, $counter->visits);
 
 		$session->close(); // unlocking drops the key
 

@@ -164,10 +164,9 @@ class RedisSessionHandler extends Nette\Object implements \SessionHandlerInterfa
 		}
 
 		$key = $this->formatKey($id);
-		$this->client->multi(function (RedisClient $client) use ($key) {
-			$client->del($key);
-			$client->unlock($key);
-		});
+
+		$this->client->del($key);
+		$this->client->unlock($key);
 
 		return TRUE;
 	}

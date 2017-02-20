@@ -126,6 +126,26 @@ class LockException extends RedisClientException
 	/**
 	 * @return LockException
 	 */
+	public static function zeroTimeout()
+	{
+		return new static("Timeout cannot be less than or equal to 0.");
+	}
+
+
+
+	/**
+	 * @return LockException
+	 */
+	public static function timeoutGreaterThanDuration()
+	{
+		return new static("Timeout cannot be greater than duration.");
+	}
+
+
+
+	/**
+	 * @return LockException
+	 */
 	public static function durabilityTimedOut()
 	{
 		return new static("Process ran too long. Increase lock duration, or extend lock regularly.");
@@ -136,9 +156,20 @@ class LockException extends RedisClientException
 	/**
 	 * @return LockException
 	 */
-	public static function invalidDuration()
+	public static function noExpirationTime()
 	{
-		return new static("Some rude client have messed up the lock duration.");
+		return new static("Lock has no expiration time.");
+	}
+
+
+
+	/**
+	 * @param int $code
+	 * @return LockException
+	 */
+	public static function unsupportedErrorCode($code)
+	{
+		return new static("Unsupported error code $code from EXTEND script.");
 	}
 
 }

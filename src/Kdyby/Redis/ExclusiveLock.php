@@ -34,6 +34,7 @@ class ExclusiveLock extends Nette\Object
 
 	/**
 	 * Duration of the lock, this is time in seconds, how long any other process can't work with the row.
+	 * Use 0 for never timeout (use this with care).
 	 *
 	 * @var int
 	 */
@@ -43,7 +44,7 @@ class ExclusiveLock extends Nette\Object
 	 * When there are too many requests trying to acquire the lock, you can set this timeout,
 	 * to make them manually die in case they would be taking too long and the user would lock himself out.
 	 *
-	 * @var bool
+	 * @var int|bool
 	 */
 	public $acquireTimeout = FALSE;
 
@@ -70,16 +71,6 @@ class ExclusiveLock extends Nette\Object
 
 
 	/**
-	 * @return int
-	 */
-	public function calculateTimeout()
-	{
-		return time() + abs((int)$this->duration) + 1;
-	}
-
-
-
-	/**
 	 * Tries to acquire a key lock, otherwise waits until it's released and repeats.
 	 *
 	 * @param string $key
@@ -92,42 +83,66 @@ class ExclusiveLock extends Nette\Object
 			return $this->increaseLockTimeout($key);
 		}
 
-		$start = microtime(TRUE);
+		$timeout = $this->acquireTimeout ? (int) $this->acquireTimeout : FALSE;
+		$duration = (int) $this->duration;
+
+		if (($timeout !== FALSE) && ($timeout <= 0)) {
+			throw LockException::zeroTimeout();
+		}
+
+		if ($timeout && $duration && ($timeout > $duration)) {
+			throw LockException::timeoutGreaterThanDuration();
+		}
 
 		$lockKey = $this->formatLock($key);
+		$signalKey = $this->formatSignal($key);
+
+		$busy = TRUE;
+		$timedOut = FALSE;
 		$maxAttempts = 10;
-		do {
-			$sleepTime = 5000;
-			do {
-				if ($this->client->setNX($lockKey, $timeout = $this->calculateTimeout())) {
-					$this->keys[$key] = $timeout;
-					return TRUE;
-				}
 
-				if ($this->acquireTimeout !== FALSE && (microtime(TRUE) - $start) >= $this->acquireTimeout) {
-					throw LockException::acquireTimeout();
-				}
-
-				$lockExpiration = $this->client->get($lockKey);
-				$sleepTime += 2500;
-
-			} while (empty($lockExpiration) || ($lockExpiration >= time() && !usleep($sleepTime)));
-
-			$oldExpiration = $this->client->getSet($lockKey, $timeout = $this->calculateTimeout());
-			if ($oldExpiration === $lockExpiration) {
-				$this->keys[$key] = $timeout;
-				return TRUE;
+		while ($busy) {
+			if ($maxAttempts-- == 0) {
+				throw LockException::highConcurrency();
 			}
 
-		} while (--$maxAttempts > 0);
+			// generate unique rand
+			do {
+				$rand = Nette\Utils\Random::generate(16);
+				$tryAcquireLock = $this->client->evalScript('
+						if redis.call("get", KEYS[1]) == ARGV[1] then
+							return -1
+						end
+						if tonumber(ARGV[2]) > 0 then
+							return redis.call("set", KEYS[1], ARGV[1], "EX", ARGV[2], "NX")
+						end
+						return redis.call("set", KEYS[1], ARGV[1], "NX")
+					', [$lockKey], [$rand, $this->duration]);
+				if ($tryAcquireLock === -1) {
+					continue;
+				}
+				$busy = !$tryAcquireLock;
+			} while (FALSE);
 
-		throw LockException::highConcurrency();
+			if ($busy) {
+				if ($timedOut) {
+					throw LockException::acquireTimeout();
+				} else {
+					$timedOut = !$this->client->blpop($signalKey, $timeout ?: $duration ?: 0) && $timeout;
+				}
+			}
+		}
+
+		$this->keys[$key] = $rand;
+
+		return TRUE;
 	}
 
 
 
 	/**
 	 * @param string $key
+	 * @return bool
 	 */
 	public function release($key)
 	{
@@ -135,12 +150,26 @@ class ExclusiveLock extends Nette\Object
 			return FALSE;
 		}
 
-		if ($this->keys[$key] <= time()) {
-			unset($this->keys[$key]);
-			return FALSE;
+		$signalKey = self::formatSignal($key);
+
+		$error = $this->client->evalScript('
+				if redis.call("get", KEYS[1]) ~= ARGV[1] then
+					return 1
+				else
+					redis.call("del", KEYS[2])
+					redis.call("lpush", KEYS[2], 1)
+					redis.call("del", KEYS[1])
+					return 0
+				end
+			', [self::formatLock($key), $signalKey], [$this->keys[$key]]
+		);
+		if ($error == 1) {
+			return FALSE; // Lock is not acquired or it already expired
+		} else if ($error) {
+			return FALSE; // Unsupported error code from release script
 		}
 
-		$this->client->del($this->formatLock($key));
+		$this->client->del($signalKey);
 		unset($this->keys[$key]);
 		return TRUE;
 	}
@@ -150,6 +179,7 @@ class ExclusiveLock extends Nette\Object
 	/**
 	 * @param string $key
 	 * @throws LockException
+	 * @return bool
 	 */
 	public function increaseLockTimeout($key)
 	{
@@ -157,15 +187,31 @@ class ExclusiveLock extends Nette\Object
 			return FALSE;
 		}
 
-		if ($this->keys[$key] <= time()) {
-			throw LockException::durabilityTimedOut();
+		if (!$this->duration) {
+			return FALSE;
 		}
 
-		$oldTimeout = $this->client->getSet($this->formatLock($key), $timeout = $this->calculateTimeout());
-		if ((int)$oldTimeout !== (int)$this->keys[$key]) {
-			throw LockException::invalidDuration();
+		$lockKey = self::formatLock($key);
+
+		$error = $this->client->evalScript('
+				if redis.call("get", KEYS[1]) ~= ARGV[2] then
+					return 1
+				elseif redis.call("ttl", KEYS[1]) < 0 then
+					return 2
+				else
+					redis.call("expire", KEYS[1], ARGV[1])
+					return 0
+				end
+			', [$lockKey], [$this->duration, $this->keys[$key]]
+		);
+		if ($error == 1) {
+			throw LockException::durabilityTimedOut(); // Lock is not acquired or it already expired
+		} else if ($error == 2) {
+			throw LockException::noExpirationTime(); // Lock has no assigned expiration time
+		} else if ($error) {
+			throw LockException::unsupportedErrorCode($error); // Unsupported error code from increase lock timeout script
 		}
-		$this->keys[$key] = $timeout;
+
 		return TRUE;
 	}
 
@@ -197,15 +243,11 @@ class ExclusiveLock extends Nette\Object
 
 	/**
 	 * @param string $key
-	 * @return int
+	 * @return string
 	 */
-	public function getLockTimeout($key)
+	protected function formatLock($key)
 	{
-		if (!isset($this->keys[$key])) {
-			return 0;
-		}
-
-		return $this->keys[$key] - time();
+		return $key . ':lock';
 	}
 
 
@@ -214,9 +256,9 @@ class ExclusiveLock extends Nette\Object
 	 * @param string $key
 	 * @return string
 	 */
-	protected function formatLock($key)
+	protected function formatSignal($key)
 	{
-		return $key . ':lock';
+		return $key . ':signal';
 	}
 
 
