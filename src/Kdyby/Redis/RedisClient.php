@@ -162,6 +162,9 @@ class RedisClient extends Nette\Object implements \ArrayAccess
 
 	const DEFAULT_PORT = 6379;
 
+	const EXCLUSIVELOCK_ACTIVE = 'active';
+	const EXCLUSIVELOCK_PASSIVE = 'pasive';
+
 	/**
 	 * @var Driver\PhpRedisDriver
 	 */
@@ -203,7 +206,12 @@ class RedisClient extends Nette\Object implements \ArrayAccess
 	private $database;
 
 	/**
-	 * @var ExclusiveLock
+	 * @var string
+	 */
+	private $lockType = self::EXCLUSIVELOCK_ACTIVE;
+
+	/**
+	 * @var IExclusiveLock
 	 */
 	private $lock;
 
@@ -613,12 +621,21 @@ class RedisClient extends Nette\Object implements \ArrayAccess
 
 
 	/**
-	 * @return ExclusiveLock
+	 * @return IExclusiveLock
 	 */
 	protected function getLock()
 	{
 		if ($this->lock === NULL) {
-			$this->lock = new ExclusiveLock($this);
+			switch ($this->lockType) {
+				case self::EXCLUSIVELOCK_ACTIVE :
+					$this->lock = new ExclusiveLock\ActiveExclusiveLock($this);
+					break;
+				case self::EXCLUSIVELOCK_PASSIVE :
+					$this->lock = new ExclusiveLock\PassiveExclusiveLock($this);
+					break;
+				default :
+					throw new RedisClientException(sprintf('Bad exclusive lock type:  %s', $this->lockType));
+			}
 		}
 
 		return $this->lock;
@@ -627,18 +644,25 @@ class RedisClient extends Nette\Object implements \ArrayAccess
 
 
 	/**
-	 * @param ExclusiveLock $lock
+	 * @param IExclusiveLock $lock
 	 */
-	public function setLock(ExclusiveLock $lock)
+	public function setLock(IExclusiveLock $lock)
 	{
 		$lock->setClient($this);
 
 		if ($this->lock) {
-			$lock->duration = $this->lock->duration;
-			$lock->acquireTimeout = $this->lock->acquireTimeout;
+			$lock->setDuration($this->lock->getDuration());
+			$lock->setAcquireTimeout($this->lock->getAcquireTimeout());
 		}
 
 		$this->lock = $lock;
+	}
+
+
+
+	public function setPassiveLockType()
+	{
+		$this->lockType = self::EXCLUSIVELOCK_PASSIVE;
 	}
 
 
@@ -650,8 +674,8 @@ class RedisClient extends Nette\Object implements \ArrayAccess
 	 */
 	public function setupLockDuration($duration, $timeout = FALSE)
 	{
-		$this->getLock()->duration = abs((int)$duration);
-		$this->getLock()->acquireTimeout = abs((int) $timeout) ?: FALSE;
+		$this->getLock()->setDuration($duration);
+		$this->getLock()->setAcquireTimeout($timeout);
 	}
 
 

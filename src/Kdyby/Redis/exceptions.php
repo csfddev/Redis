@@ -172,4 +172,14 @@ class LockException extends RedisClientException
 		return new static("Unsupported error code $code from EXTEND script.");
 	}
 
+
+
+	/**
+	 * @return LockException
+	 */
+	public static function invalidDuration()
+	{
+		return new static("Some rude client have messed up the lock duration.");
+	}
+
 }

@@ -48,6 +48,7 @@ class RedisExtension extends Nette\DI\CompilerExtension
 		'auth' => NULL,
 		'persistent' => FALSE,
 		'connectionAttempts' => 1,
+		'lockType' => RedisClient::EXCLUSIVELOCK_ACTIVE,
 		'lockDuration' => 10,
 		'lockAcquireTimeout' => FALSE,
 		'debugger' => '%debugMode%',
@@ -128,6 +129,9 @@ class RedisExtension extends Nette\DI\CompilerExtension
 
 		$this->configuredClients[$name] = $config;
 
+		if ($config['lockType'] === RedisClient::EXCLUSIVELOCK_PASSIVE) {
+			$client->addSetup('setPassiveLockType');
+		}
 		$client->addSetup('setupLockDuration', [$config['lockDuration'], $config['lockAcquireTimeout']]);
 		$client->addSetup('setConnectionAttempts', [$config['connectionAttempts']]);
 		$client->addTag('redis.client');

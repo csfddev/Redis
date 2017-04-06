@@ -8,7 +8,7 @@
  * For the full copyright and license information, please view the file license.txt that was distributed with this source code.
  */
 
-namespace Kdyby\Redis;
+namespace Kdyby\Redis\ExclusiveLock;
 
 use Kdyby;
 use Nette;
@@ -16,14 +16,13 @@ use Nette;
 
 
 /**
- * @author Ondřej Nešpor
- * @author Filip Procházka <filip@prochazka.su>
+ * @author Jakub Trmota
  */
-class ExclusiveLock extends Nette\Object
+class PassiveExclusiveLock extends Nette\Object implements Kdyby\Redis\IExclusiveLock
 {
 
 	/**
-	 * @var RedisClient
+	 * @var Kdyby\Redis\RedisClient
 	 */
 	private $client;
 
@@ -51,9 +50,9 @@ class ExclusiveLock extends Nette\Object
 
 
 	/**
-	 * @param RedisClient $redisClient
+	 * @param Kdyby\Redis\RedisClient $redisClient
 	 */
-	public function __construct(RedisClient $redisClient)
+	public function __construct(Kdyby\Redis\RedisClient $redisClient)
 	{
 		$this->client = $redisClient;
 	}
@@ -61,11 +60,51 @@ class ExclusiveLock extends Nette\Object
 
 
 	/**
-	 * @param RedisClient $client
+	 * @param Kdyby\Redis\RedisClient $client
 	 */
-	public function setClient(RedisClient $client)
+	public function setClient(Kdyby\Redis\RedisClient $client)
 	{
 		$this->client = $client;
+	}
+
+
+
+	/**
+	 * @return int
+	 */
+	public function getDuration()
+	{
+		return $this->duration;
+	}
+
+
+
+	/**
+	 * @param int $duration
+	 */
+	public function setDuration($duration)
+	{
+		$this->duration = abs((int)$duration);
+	}
+
+
+
+	/**
+	 * @return int|FALSE
+	 */
+	public function getAcquireTimeout()
+	{
+		return $this->acquireTimeout;
+	}
+
+
+
+	/**
+	 * @param int|FALSE $timeout
+	 */
+	public function setAcquireTimeout($timeout)
+	{
+		$this->acquireTimeout = abs((int) $timeout) ?: FALSE;
 	}
 
 
@@ -74,7 +113,7 @@ class ExclusiveLock extends Nette\Object
 	 * Tries to acquire a key lock, otherwise waits until it's released and repeats.
 	 *
 	 * @param string $key
-	 * @throws LockException
+	 * @throws Kdyby\Redis\LockException
 	 * @return bool
 	 */
 	public function acquireLock($key)
@@ -87,11 +126,11 @@ class ExclusiveLock extends Nette\Object
 		$duration = (int) $this->duration;
 
 		if (($timeout !== FALSE) && ($timeout <= 0)) {
-			throw LockException::zeroTimeout();
+			throw Kdyby\Redis\LockException::zeroTimeout();
 		}
 
 		if ($timeout && $duration && ($timeout > $duration)) {
-			throw LockException::timeoutGreaterThanDuration();
+			throw Kdyby\Redis\LockException::timeoutGreaterThanDuration();
 		}
 
 		$lockKey = $this->formatLock($key);
@@ -103,7 +142,7 @@ class ExclusiveLock extends Nette\Object
 
 		while ($busy) {
 			if ($maxAttempts-- == 0) {
-				throw LockException::highConcurrency();
+				throw Kdyby\Redis\LockException::highConcurrency();
 			}
 
 			// generate unique rand
@@ -126,7 +165,7 @@ class ExclusiveLock extends Nette\Object
 
 			if ($busy) {
 				if ($timedOut) {
-					throw LockException::acquireTimeout();
+					throw Kdyby\Redis\LockException::acquireTimeout();
 				} else {
 					$timedOut = !$this->client->blpop($signalKey, $timeout ?: $duration ?: 0) && $timeout;
 				}
@@ -178,7 +217,7 @@ class ExclusiveLock extends Nette\Object
 
 	/**
 	 * @param string $key
-	 * @throws LockException
+	 * @throws Kdyby\Redis\LockException
 	 * @return bool
 	 */
 	public function increaseLockTimeout($key)
@@ -205,11 +244,11 @@ class ExclusiveLock extends Nette\Object
 			', [$lockKey], [$this->duration, $this->keys[$key]]
 		);
 		if ($error == 1) {
-			throw LockException::durabilityTimedOut(); // Lock is not acquired or it already expired
+			throw Kdyby\Redis\LockException::durabilityTimedOut(); // Lock is not acquired or it already expired
 		} else if ($error == 2) {
-			throw LockException::noExpirationTime(); // Lock has no assigned expiration time
+			throw Kdyby\Redis\LockException::noExpirationTime(); // Lock has no assigned expiration time
 		} else if ($error) {
-			throw LockException::unsupportedErrorCode($error); // Unsupported error code from increase lock timeout script
+			throw Kdyby\Redis\LockException::unsupportedErrorCode($error); // Unsupported error code from increase lock timeout script
 		}
 
 		return TRUE;
