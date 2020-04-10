@@ -43,7 +43,10 @@
 	"autoload": {
 		"psr-4": {
 			"Kdyby\\Redis\\": "src/Kdyby/Redis"
-		}
+		},
+		"files": [
+			"src/Kdyby/Redis/Redis.php"
+		]
 	},
 	"autoload-dev": {
 		"psr-4": {
