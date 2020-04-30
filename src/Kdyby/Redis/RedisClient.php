@@ -53,7 +53,7 @@ use Tracy\Debugger;
  * @method string       getSet(string $key, string $value) Set the string value of a key and return its old value, return previous value located at this key
  * @method int          hDel(string $key, string $field1, string $field2 = NULL) Delete one or more hash fields
  * @method bool         hExists(string $key, string $field) Determine if a hash field exists
- * @method string       hGet(string $key, string $field) Get the value of a hash field
+ * @method string|bool  hGet(string $key, string $field) Get the value of a hash field
  * @method array        hGetAll(string $key) Get all the fields and values in a hash
  * @method int          hIncrBy(string $key, string $field, int $increment) Increment the integer value of a hash field by the given number. Return the new value
  * @method float        hIncrByFloat(string $key, string $field, float $increment) Increment the float value of a hash field by the given amount. Return the new value
@@ -62,7 +62,7 @@ use Tracy\Debugger;
  * @method array        hmGet(string $key, array $fields) Get the values of all the given hash fields
  * @method bool         hmSet(string $key, array $values) Set multiple hash fields to multiple values
  * @method int          hSet(string $key, string $field, string $value) Set the string value of a hash field. Return 1 if value didn't exist and was added, 0 if the value was replaced
- * @method int          hSetNX(string $key, string $field, string $value) Set the value of a hash field, only if the field does not exist. Return TRUE if field was set, FALSE if it was already present.
+ * @method bool         hSetNX(string $key, string $field, string $value) Set the value of a hash field, only if the field does not exist. Return TRUE if field was set, FALSE if it was already present.
  * @method array        hVals(string $key) Get all the values in a hash
  * @method int          incr(string $key) Increment the integer value of a key by one, return new value
  * @method int          incrBy(string $key, int $increment) Increment the integer value of a key by the given amount, return new value
