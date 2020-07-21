@@ -107,10 +107,14 @@ class RedisJournal implements \Nette\Caching\Storages\IJournal
 	public function clean(array $conds): ?array
 	{
 		if (!empty($conds[Cache::ALL])) {
-			$all = $this->client->keys(self::NS_NETTE . ':*');
+			$all = [];
+			$iterator = NULL;
+			while (($iterator !== 0) && (($keys = $this->redis->scan($iterator, self::NS_NETTE . ':*', 100)) !== FALSE)) {
+				$all[] = $keys;
+			}
 
 			$this->client->multi();
-			\call_user_func_array([$this->client, 'del'], $all);
+			\call_user_func_array([$this->client, 'del'], array_merge([], ...$all));
 			$this->client->exec();
 			return NULL;
 		}
