@@ -211,7 +211,7 @@ class RedisStorage implements \Kdyby\Redis\IMultiReadStorage
 		}
 
 		if (!\is_string($data)) {
-			$data = \serialize($data);
+			$data = \igbinary_serialize($data);
 			$meta[self::META_SERIALIZED] = TRUE;
 		}
 
@@ -350,7 +350,7 @@ class RedisStorage implements \Kdyby\Redis\IMultiReadStorage
 
 		}
 
-		return @\unserialize($stored[1]); // intentionally @
+		return @\igbinary_unserialize($stored[1]); // intentionally @
 	}
 
 }
